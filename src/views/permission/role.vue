@@ -1,283 +1,178 @@
 <template>
   <div class="app-container">
-    <el-button type="primary" @click="handleAddRole">
-      {{ $t('permission.addRole') }}
-    </el-button>
+    <el-table
+      ref="table"
+      :data="tableData"
+      style="width: 100%"
+      row-key="id"
+      :tree-props="{children: 'children', hasChildren: 'hasChildren'}"
+    >
+      <el-table-column label="#" width="50" />
+      <el-table-column label="主机" prop="host">
+        <template slot-scope="scope">
+          <div v-if="!Number.isInteger(scope.row.memory_usage)">
+            <el-button type="text" @click="getVmInfo(scope.row)">{{ scope.row.name }}</el-button>
+          </div>
+          <div v-else>{{ scope.row.host }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" prop="status" width="180">
+        <template slot-scope="scope">
+          <div v-if="Number.isInteger(scope.row.memory_usage)">
+            <span v-if="scope.row.status" style="color: #67C23A">Connected</span>
+            <span v-else style="color: #F56C6C">Not Connected</span>
+          </div>
+          <div v-else>
+            <span v-if="scope.row.status === 1" style="color: #67C23A">运行</span>
+            <span v-if="scope.row.status === 5" style="color: #909399">关机</span>
+            <span v-if="scope.row.status === 3" style="color: #E6A23C">暂停</span>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="CPU" prop="cpu" width="180" />
+      <el-table-column label="内存" prop="memory" width="180" />
+      <el-table-column label="内存使用量 / 操作">
+        <template slot-scope="scope">
+          <div v-if="Number.isInteger(scope.row.memory_usage)">
+            <el-progress v-if="scope.row.memory_usage < 60" :text-inside="true" :stroke-width="15" :percentage="scope.row.memory_usage" status="success" />
+            <el-progress v-if="scope.row.memory_usage >= 60" :text-inside="true" :stroke-width="15" :percentage="scope.row.memory_usage" status="warning" />
+            <el-progress v-if="scope.row.memory_usage >= 80" :text-inside="true" :stroke-width="15" :percentage="scope.row.memory_usage" status="exception" />
+          </div>
+          <div v-else>
+            <el-button-group>
+              <el-tooltip content="启动">
+                <el-button size="mini" type="info" icon="el-icon-video-play" />
+              </el-tooltip>
+              <el-tooltip content="暂停">
+                <el-button size="mini" type="info" icon="el-icon-video-pause" :disabled="scope.row.disabled" @click="stopVM(scope.row)" />
+              </el-tooltip>
+              <el-tooltip content="关闭">
+                <el-button size="mini" type="info" icon="el-icon-switch-button" />
+              </el-tooltip>
+              <el-tooltip content="删除">
+                <el-button size="mini" type="info" icon="el-icon-delete" @click.native.prevent="deleteVM(scope.row)" />
+              </el-tooltip>
+              <el-tooltip content="连接">
+                <el-button size="mini" type="info" icon="el-icon-s-platform" />
+              </el-tooltip>
+            </el-button-group>
+          </div>
+        </template>
 
-    <el-table :data="rolesList" style="width: 100%;margin-top:30px;" border>
-      <el-table-column align="center" label="Role Key" width="220">
-        <template slot-scope="scope">
-          {{ scope.row.key }}
-        </template>
-      </el-table-column>
-      <el-table-column align="center" label="Role Name" width="220">
-        <template slot-scope="scope">
-          {{ scope.row.name }}
-        </template>
-      </el-table-column>
-      <el-table-column align="header-center" label="Description">
-        <template slot-scope="scope">
-          {{ scope.row.description }}
-        </template>
-      </el-table-column>
-      <el-table-column align="center" label="Operations">
-        <template slot-scope="scope">
-          <el-button type="primary" size="small" @click="handleEdit(scope)">
-            {{ $t('permission.editPermission') }}
-          </el-button>
-          <el-button type="danger" size="small" @click="handleDelete(scope)">
-            {{ $t('permission.delete') }}
-          </el-button>
-        </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog :visible.sync="dialogVisible" :title="dialogType==='edit'?'Edit Role':'New Role'">
-      <el-form :model="role" label-width="80px" label-position="left">
-        <el-form-item label="Name">
-          <el-input v-model="role.name" placeholder="Role Name" />
+    <el-dialog title="详情" :visible.sync="vmInfoVisible">
+      <el-form :model="form">
+        <el-form-item label="活动名称" :label-width="formLabelWidth">
+          <el-input v-model="form.name" autocomplete="off" />
         </el-form-item>
-        <el-form-item label="Desc">
-          <el-input
-            v-model="role.description"
-            :autosize="{ minRows: 2, maxRows: 4}"
-            type="textarea"
-            placeholder="Role Description"
-          />
-        </el-form-item>
-        <el-form-item label="Menus">
-          <el-tree ref="tree" :check-strictly="checkStrictly" :data="routesData" :props="defaultProps" show-checkbox node-key="path" class="permission-tree" />
+        <el-form-item label="活动区域" :label-width="formLabelWidth">
+          <el-select v-model="form.region" placeholder="请选择活动区域">
+            <el-option label="区域一" value="shanghai" />
+            <el-option label="区域二" value="beijing" />
+          </el-select>
         </el-form-item>
       </el-form>
-      <div style="text-align:right;">
-        <el-button type="danger" @click="dialogVisible=false">
-          {{ $t('permission.cancel') }}
-        </el-button>
-        <el-button type="primary" @click="confirmRole">
-          {{ $t('permission.confirm') }}
-        </el-button>
+      <div slot="footer" class="dialog-footer">
+        <el-button @click="dialogFormVisible = false">取 消</el-button>
+        <el-button type="primary" @click="dialogFormVisible = false">确 定</el-button>
       </div>
     </el-dialog>
   </div>
 </template>
 
 <script>
-import path from 'path'
-import { deepClone } from '@/utils'
-import { getRoutes, getRoles, addRole, deleteRole, updateRole } from '@/api/role'
-import i18n from '@/lang'
-
-const defaultRole = {
-  key: '',
-  name: '',
-  description: '',
-  routes: []
-}
+import { getVmData, deleteVM, getVmInfo, addVM } from '@/api/kvm'
 
 export default {
   data() {
     return {
-      role: Object.assign({}, defaultRole),
-      routes: [],
-      rolesList: [],
-      dialogVisible: false,
-      dialogType: 'new',
-      checkStrictly: false,
-      defaultProps: {
-        children: 'children',
-        label: 'title'
-      }
-    }
-  },
-  computed: {
-    routesData() {
-      return this.routes
+      tableData: [],
+      vmInfoVisible: false,
+      form: {
+        name: '',
+        region: '',
+        date1: '',
+        date2: '',
+        delivery: false,
+        type: [],
+        resource: '',
+        desc: ''
+      },
+      formLabelWidth: '120px'
     }
   },
   created() {
-    // Mock: get all routes and roles list from server
-    this.getRoutes()
-    this.getRoles()
+    this.getVmData()
   },
   methods: {
-    async getRoutes() {
-      const res = await getRoutes()
-      this.serviceRoutes = res.data
-      const routes = this.generateRoutes(res.data)
-      this.routes = this.i18n(routes)
+    getVmInfo(row) {
+      const vmId = row.id
+      const nodeHost = row.form_host
+      getVmInfo(vmId, nodeHost).then(response => {
+        console.log(response.data)
+      }).catch(error => console.log(error))
+      // getVmInfo(vmId, nodeHost).then(response => {
+      //   this.vmInfoVisible = true
+      //   console.log(response.data)
+      // })
     },
-    async getRoles() {
-      const res = await getRoles()
-      this.rolesList = res.data
-    },
-    i18n(routes) {
-      const app = routes.map(route => {
-        route.title = i18n.t(`route.${route.title}`)
-        if (route.children) {
-          route.children = this.i18n(route.children)
-        }
-        return route
-      })
-      return app
-    },
-    // Reshape the routes structure so that it looks the same as the sidebar
-    generateRoutes(routes, basePath = '/') {
-      const res = []
-
-      for (let route of routes) {
-        // skip some route
-        if (route.hidden) { continue }
-
-        const onlyOneShowingChild = this.onlyOneShowingChild(route.children, route)
-
-        if (route.children && onlyOneShowingChild && !route.alwaysShow) {
-          route = onlyOneShowingChild
-        }
-
-        const data = {
-          path: path.resolve(basePath, route.path),
-          title: route.meta && route.meta.title
-
-        }
-
-        // recursive child routes
-        if (route.children) {
-          data.children = this.generateRoutes(route.children, data.path)
-        }
-        res.push(data)
-      }
-      return res
-    },
-    generateArr(routes) {
-      let data = []
-      routes.forEach(route => {
-        data.push(route)
-        if (route.children) {
-          const temp = this.generateArr(route.children)
-          if (temp.length > 0) {
-            data = [...data, ...temp]
-          }
-        }
-      })
-      return data
-    },
-    handleAddRole() {
-      this.role = Object.assign({}, defaultRole)
-      if (this.$refs.tree) {
-        this.$refs.tree.setCheckedNodes([])
-      }
-      this.dialogType = 'new'
-      this.dialogVisible = true
-    },
-    handleEdit(scope) {
-      this.dialogType = 'edit'
-      this.dialogVisible = true
-      this.checkStrictly = true
-      this.role = deepClone(scope.row)
-      this.$nextTick(() => {
-        const routes = this.generateRoutes(this.role.routes)
-        this.$refs.tree.setCheckedNodes(this.generateArr(routes))
-        // set checked state of a node not affects its father and child nodes
-        this.checkStrictly = false
+    getVmData() {
+      getVmData().then(response => {
+        this.tableData = response.data
       })
     },
-    handleDelete({ $index, row }) {
-      this.$confirm('Confirm to remove the role?', 'Warning', {
-        confirmButtonText: 'Confirm',
-        cancelButtonText: 'Cancel',
+    stopVM(row) {
+      this.$set(row, 'disabled', true)
+      this.$message({
+        type: 'success',
+        message: '停用成功'
+      })
+    },
+    deleteVM(row) {
+      const tableData = this.tableData
+      const h = this.$createElement
+      this.$confirm(h('p', null, [
+        h('span', null, '确认删除 '),
+        h('i', { style: 'color: teal' }, row.host),
+        h('span', null, ' 虚拟机吗？')
+      ]), '警告', {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
         type: 'warning'
-      })
-        .then(async() => {
-          await deleteRole(row.key)
-          this.rolesList.splice($index, 1)
-          this.$message({
-            type: 'success',
-            message: 'Delete succed!'
-          })
-        })
-        .catch(err => { console.error(err) })
-    },
-    generateTree(routes, basePath = '/', checkedKeys) {
-      const res = []
-
-      for (const route of routes) {
-        const routePath = path.resolve(basePath, route.path)
-
-        // recursive child routes
-        if (route.children) {
-          route.children = this.generateTree(route.children, routePath, checkedKeys)
-        }
-
-        if (checkedKeys.includes(routePath) || (route.children && route.children.length >= 1)) {
-          res.push(route)
-        }
-      }
-      return res
-    },
-    async confirmRole() {
-      const isEdit = this.dialogType === 'edit'
-
-      const checkedKeys = this.$refs.tree.getCheckedKeys()
-      this.role.routes = this.generateTree(deepClone(this.serviceRoutes), '/', checkedKeys)
-
-      if (isEdit) {
-        await updateRole(this.role.key, this.role)
-        for (let index = 0; index < this.rolesList.length; index++) {
-          if (this.rolesList[index].key === this.role.key) {
-            this.rolesList.splice(index, 1, Object.assign({}, this.role))
-            break
+      }).then(async() => {
+        await tableData.forEach((item) => {
+          if (item['host'] === row.form_host) {
+            deleteVM().then(response => {
+              console.log(response.status)
+              item.children.splice(item.children.indexOf(row), 1)
+              this.$message({
+                type: 'success',
+                message: '删除成功'
+              })
+            })
           }
-        }
-      } else {
-        const { data } = await addRole(this.role)
-        this.role.key = data.key
-        this.rolesList.push(this.role)
-      }
-
-      const { description, key, name } = this.role
-      this.dialogVisible = false
-      this.$notify({
-        title: 'Success',
-        dangerouslyUseHTMLString: true,
-        message: `
-            <div>Role Key: ${key}</div>
-            <div>Role Name: ${name}</div>
-            <div>Description: ${description}</div>
-          `,
-        type: 'success'
+        })
+      }).catch(() => {
+        this.$message({
+          type: 'info',
+          message: '已取消删除'
+        })
       })
-    },
-    // reference: src/view/layout/components/Sidebar/SidebarItem.vue
-    onlyOneShowingChild(children = [], parent) {
-      let onlyOneChild = null
-      const showingChildren = children.filter(item => !item.hidden)
-
-      // When there is only one child route, the child route is displayed by default
-      if (showingChildren.length === 1) {
-        onlyOneChild = showingChildren[0]
-        onlyOneChild.path = path.resolve(parent.path, onlyOneChild.path)
-        return onlyOneChild
-      }
-
-      // Show parent if there are no child route to display
-      if (showingChildren.length === 0) {
-        onlyOneChild = { ... parent, path: '', noShowingChildren: true }
-        return onlyOneChild
-      }
-
-      return false
     }
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.app-container {
-  .roles-table {
-    margin-top: 30px;
+  .app-container {
+    .roles-table {
+      margin-top: 30px;
+    }
+
+    .permission-tree {
+      margin-bottom: 30px;
+    }
   }
-  .permission-tree {
-    margin-bottom: 30px;
-  }
-}
 </style>
